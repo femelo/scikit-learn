@@ -58,7 +58,7 @@ X_csr = sp.csr_matrix(X)
 @pytest.mark.parametrize(
     "array_constr", [np.array, sp.csr_matrix], ids=["dense", "sparse"]
 )
-@pytest.mark.parametrize("algo", ["lloyd", "elkan"])
+@pytest.mark.parametrize("algo", ["lloyd", "elkan", "hamerly"])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_kmeans_results(array_constr, algo, dtype):
     # Checks that KMeans works as intended on toy dataset by comparing with
@@ -84,7 +84,7 @@ def test_kmeans_results(array_constr, algo, dtype):
 @pytest.mark.parametrize(
     "array_constr", [np.array, sp.csr_matrix], ids=["dense", "sparse"]
 )
-@pytest.mark.parametrize("algo", ["lloyd", "elkan"])
+@pytest.mark.parametrize("algo", ["lloyd", "elkan", "hamerly"])
 def test_kmeans_relocated_clusters(array_constr, algo):
     # check that empty clusters are relocated as expected
     X = array_constr([[0, 0], [0.5, 0], [0.5, 1], [1, 1]])
@@ -177,8 +177,30 @@ def test_kmeans_elkan_results(distribution, array_constr, tol, global_random_see
     assert km_elkan.n_iter_ == km_lloyd.n_iter_
     assert km_elkan.inertia_ == pytest.approx(km_lloyd.inertia_, rel=1e-6)
 
+@pytest.mark.parametrize("tol", [1e-2, 1e-8, 1e-100, 0])
+def test_kmeans_hamerly_results(distribution, array_constr, tol, global_random_seed):
+    # Check that results are identical between lloyd and hamerly algorithms
+    rnd = np.random.RandomState(global_random_seed)
+    if distribution == "normal":
+        X = rnd.normal(size=(5000, 10))
+    else:
+        X, _ = make_blobs(random_state=rnd)
+    X[X < 0] = 0
+    X = array_constr(X)
 
-@pytest.mark.parametrize("algorithm", ["lloyd", "elkan"])
+    km_lloyd = KMeans(n_clusters=5, random_state=0, n_init=1, tol=tol)
+    km_hamerly = KMeans(
+        algorithm="hamerly", n_clusters=5, random_state=0, n_init=1, tol=tol
+    )
+
+    km_lloyd.fit(X)
+    km_hamerly.fit(X)
+    assert_allclose(km_hamerly.cluster_centers_, km_lloyd.cluster_centers_)
+    assert_array_equal(km_hamerly.labels_, km_lloyd.labels_)
+    assert km_hamerly.n_iter_ == km_lloyd.n_iter_
+    assert km_hamerly.inertia_ == pytest.approx(km_lloyd.inertia_, rel=1e-6)
+
+@pytest.mark.parametrize("algorithm", ["lloyd", "elkan", "hamerly"])
 def test_kmeans_convergence(algorithm):
     # Check that KMeans stops when convergence is reached when tol=0. (#16075)
     rnd = np.random.RandomState(0)
@@ -358,7 +380,7 @@ def test_minibatch_kmeans_verbose():
         sys.stdout = old_stdout
 
 
-@pytest.mark.parametrize("algorithm", ["lloyd", "elkan"])
+@pytest.mark.parametrize("algorithm", ["lloyd", "elkan", "hamerly"])
 @pytest.mark.parametrize("tol", [1e-2, 0])
 def test_kmeans_verbose(algorithm, tol, capsys):
     # Check verbose mode of KMeans for better coverage.
@@ -600,7 +622,7 @@ def test_score_max_iter(Estimator):
 )
 @pytest.mark.parametrize(
     "Estimator, algorithm",
-    [(KMeans, "lloyd"), (KMeans, "elkan"), (MiniBatchKMeans, None)],
+    [(KMeans, "lloyd"), (KMeans, "elkan"), (KMeans, "hamerly"), (MiniBatchKMeans, None)],
 )
 @pytest.mark.parametrize("max_iter", [2, 100])
 def test_kmeans_predict(
@@ -895,7 +917,12 @@ def test_kmeans_elkan_iter_attribute():
     # it's right value (#11340).
     km = KMeans(algorithm="elkan", max_iter=1).fit(X)
     assert km.n_iter_ == 1
-
+    
+def test_kmeans_hamerly_iter_attribute():
+    # Regression test on bad n_iter_ value. Previous bug n_iter_ was one off
+    # it's right value.
+    km = KMeans(algorithm="hamerly", max_iter=1).fit(X)
+    assert km.n_iter_ == 1
 
 @pytest.mark.parametrize(
     "array_constr", [np.array, sp.csr_matrix], ids=["dense", "sparse"]
@@ -936,11 +963,18 @@ def test_warning_elkan_1_cluster():
     ):
         KMeans(n_clusters=1, algorithm="elkan").fit(X)
 
+def test_warning_hamerly_1_cluster():
+    # Check warning messages specific to KMeans
+    with pytest.warns(
+        RuntimeWarning,
+        match="algorithm='hamerly' doesn't make sense for a single cluster",
+    ):
+        KMeans(n_clusters=1, algorithm="hamerly").fit(X)
 
 @pytest.mark.parametrize(
     "array_constr", [np.array, sp.csr_matrix], ids=["dense", "sparse"]
 )
-@pytest.mark.parametrize("algo", ["lloyd", "elkan"])
+@pytest.mark.parametrize("algo", ["lloyd", "elkan", "hamerly"])
 def test_k_means_1_iteration(array_constr, algo):
     # check the results after a single iteration (E-step M-step E-step) by
     # comparing against a pure python implementation.
