@@ -9,6 +9,7 @@
 #          Olivier Grisel <olivier.grisel@ensta.org>
 #          Mathieu Blondel <mathieu@mblondel.org>
 #          Robert Layton <robertlayton@gmail.com>
+#          Flávio Eler De Melo <flavio.eler@gmail.com>
 # License: BSD 3 clause
 
 from abc import ABC, abstractmethod
@@ -557,12 +558,12 @@ def _kmeans_single_hamerly(
         )[1]
 
         if verbose:
-            inertia = _inertia(X, sample_weight, centers, labels[:, 0], n_threads)
+            inertia = _inertia(X, sample_weight, centers, labels[:, 0].copy(), n_threads)
             print(f"Iteration {i}, inertia {inertia}")
 
         centers, centers_new = centers_new, centers
 
-        if np.array_equal(labels, labels_old):
+        if np.array_equal(labels[:, 0], labels_old[:, 0]):
             # First check the labels for strict convergence.
             if verbose:
                 print(f"Converged at iteration {i}: strict convergence.")
@@ -599,9 +600,9 @@ def _kmeans_single_hamerly(
             update_centers=False,
         )
 
-    inertia = _inertia(X, sample_weight, centers, labels[:, 0], n_threads)
+    inertia = _inertia(X, sample_weight, centers, labels[:, 0].copy(), n_threads)
 
-    return labels[:, 0], inertia, centers, i + 1
+    return labels[:, 0].copy(), inertia, centers, i + 1
 
 def _kmeans_single_elkan(
     X,
@@ -1513,7 +1514,7 @@ class KMeans(_BaseKMeans):
         **_BaseKMeans._parameter_constraints,
         "copy_x": ["boolean"],
         "algorithm": [
-            StrOptions({"lloyd", "elkan", "auto", "full"}, deprecated={"auto", "full"})
+            StrOptions({"lloyd", "elkan", "hamerly", "auto", "full"}, deprecated={"auto", "full"})
         ],
     }
 

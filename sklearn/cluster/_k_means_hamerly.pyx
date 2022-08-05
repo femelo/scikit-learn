@@ -110,7 +110,7 @@ def init_bounds_dense(
         lower_bounds[i] = min_dist2
 
 def init_bounds_sparse(
-        floating[:, ::1] X,                      # IN READ-ONLY
+        X,                                       # IN READ-ONLY
         floating[:, ::1] centers,                # IN
         floating[:, ::1] center_half_distances,  # IN
         int[:, ::1] labels,                      # OUT
@@ -129,8 +129,8 @@ def init_bounds_sparse(
 
     Parameters
     ----------
-    X : ndarray of shape (n_samples, n_features), dtype=floating
-        The input data.
+    X : sparse matrix of shape (n_samples, n_features), dtype=floating
+        The input data. Must be in CSR format.
 
     centers : ndarray of shape (n_clusters, n_features), dtype=floating
         The cluster centers.
@@ -367,19 +367,17 @@ def hamerly_iter_chunked_dense(
             k, l = l, k
         for j in range(2, n_clusters):
             if (center_shift[j] > center_shift[k]):
-                l = k
-                k = j
+                l, k = k, j
             elif (center_shift[j] > center_shift[l]):
                 l = j
             else:
                 pass
         for i in range(n_samples):
             upper_bounds[i] += center_shift[labels[i, 0]]
-            if j == labels[i, 0]:
+            if k == labels[i, 0]:
                 lower_bounds[i] -= center_shift[l]
             else:
                 lower_bounds[i] -= center_shift[k]
-
 
 
 cdef void _update_chunk_dense(
@@ -422,25 +420,19 @@ cdef void _update_chunk_dense(
         if upper_bound > threshold:
             # Recompute upper bound by calculating the actual distance
             # between the sample and its current assigned center.
-            lower_bound = upper_bound
-            # Tighten upper bound
             upper_bound = _euclidean_dense_dense(
                 &X[i, 0], &centers_old[label1, 0], n_features, False)
-            # Recalculate new threshold
-            threshold = max(lower_bound, distance_next_center[label1])
             # Test again with a tight upper bound
             if upper_bound > threshold:
                 # At this point a verification of assignments with distance evaluations 
                 # is needed
                 for j in range(n_clusters):
-                    if ((j != label1) and (j != label2)):
+                    if (j != label1):
                         distance = _euclidean_dense_dense(
                             &X[i, 0], &centers_old[j, 0], n_features, False)
                         if distance < upper_bound:
-                            lower_bound = upper_bound
-                            label2 = label1
-                            upper_bound = distance
-                            label1 = j
+                            lower_bound, upper_bound = upper_bound, distance
+                            label2, label1 = label1, j
                         elif distance < lower_bound:
                             lower_bound = distance
                             label2 = j
@@ -627,15 +619,14 @@ def hamerly_iter_chunked_sparse(
             k, l = l, k
         for j in range(2, n_clusters):
             if (center_shift[j] > center_shift[k]):
-                l = k
-                k = j
+                l, k = k, j
             elif (center_shift[j] > center_shift[l]):
                 l = j
             else:
                 pass
         for i in range(n_samples):
             upper_bounds[i] += center_shift[labels[i, 0]]
-            if j == labels[i, 0]:
+            if k == labels[i, 0]:
                 lower_bounds[i] -= center_shift[l]
             else:
                 lower_bounds[i] -= center_shift[k]
@@ -685,29 +676,23 @@ cdef void _update_chunk_sparse(
         if upper_bound > threshold:
             # Recompute upper bound by calculating the actual distance
             # between the sample and its current assigned center.
-            lower_bound = upper_bound
-            # Tighten upper bound
             upper_bound = _euclidean_sparse_dense(
                 X_data[X_indptr[i] - s: X_indptr[i + 1] - s],
                 X_indices[X_indptr[i] - s: X_indptr[i + 1] - s],
                 centers_old[label1], centers_squared_norms[label1], False)
-            # Recalculate new threshold
-            threshold = max(lower_bound, distance_next_center[label1])
             # Test again with a tight upper bound
             if upper_bound > threshold:
                 # At this point a verification of assignments with distance evaluations 
                 # is needed
                 for j in range(n_clusters):
-                    if ((j != label1) and (j != label2)):
+                    if (j != label1):
                         distance = _euclidean_sparse_dense(
                             X_data[X_indptr[i] - s: X_indptr[i + 1] - s],
                             X_indices[X_indptr[i] - s: X_indptr[i + 1] - s],
                             centers_old[j], centers_squared_norms[j], False)
                         if distance < upper_bound:
-                            lower_bound = upper_bound
-                            label2 = label1
-                            upper_bound = distance
-                            label1 = j
+                            lower_bound, upper_bound = upper_bound, distance
+                            label2, label1 = label1, j
                         elif distance < lower_bound:
                             lower_bound = distance
                             label2 = j

@@ -177,6 +177,10 @@ def test_kmeans_elkan_results(distribution, array_constr, tol, global_random_see
     assert km_elkan.n_iter_ == km_lloyd.n_iter_
     assert km_elkan.inertia_ == pytest.approx(km_lloyd.inertia_, rel=1e-6)
 
+@pytest.mark.parametrize("distribution", ["normal", "blobs"])
+@pytest.mark.parametrize(
+    "array_constr", [np.array, sp.csr_matrix], ids=["dense", "sparse"]
+)
 @pytest.mark.parametrize("tol", [1e-2, 1e-8, 1e-100, 0])
 def test_kmeans_hamerly_results(distribution, array_constr, tol, global_random_seed):
     # Check that results are identical between lloyd and hamerly algorithms
