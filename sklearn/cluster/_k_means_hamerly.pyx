@@ -290,7 +290,7 @@ def hamerly_iter_chunked_dense(
         int chunk_idx, n_samples_chunk_eff
         int start, end
 
-        int i, j, k
+        int i, j, k, l
 
         floating *centers_new_chunk
         floating *weight_in_clusters_chunk
@@ -355,19 +355,31 @@ def hamerly_iter_chunked_dense(
         IF SKLEARN_OPENMP_PARALLELISM_ENABLED:
             openmp.omp_destroy_lock(&lock)
         _relocate_empty_clusters_dense(X, sample_weight, centers_old,
-                                       centers_new, weight_in_clusters, labels)
+                                       centers_new, weight_in_clusters, labels[:, 0].copy())
 
         _average_centers(centers_new, weight_in_clusters)
         _center_shift(centers_old, centers_new, center_shift)
 
         # update lower and upper bounds
-        k = 0
-        for j in range(1, n_clusters):
-            if ((j != labels[i, 0]) and (center_shift[j] > center_shift[k])):
+        k = 0 # index of the greatest center shift
+        l = 1 # index of the second greatest center shift
+        if (center_shift[k] < center_shift[l]):
+            k, l = l, k
+        for j in range(2, n_clusters):
+            if (center_shift[j] > center_shift[k]):
+                l = k
                 k = j
+            elif (center_shift[j] > center_shift[l]):
+                l = j
+            else:
+                pass
         for i in range(n_samples):
             upper_bounds[i] += center_shift[labels[i, 0]]
-            lower_bounds[i] -= center_shift[k]
+            if j == labels[i, 0]:
+                lower_bounds[i] -= center_shift[l]
+            else:
+                lower_bounds[i] -= center_shift[k]
+
 
 
 cdef void _update_chunk_dense(
@@ -532,7 +544,7 @@ def hamerly_iter_chunked_sparse(
         int chunk_idx, n_samples_chunk_eff
         int start, end
 
-        int i, j, k
+        int i, j, k, l
 
         floating[::1] centers_squared_norms = row_norms(centers_old, squared=True)
 
@@ -603,19 +615,30 @@ def hamerly_iter_chunked_sparse(
             openmp.omp_destroy_lock(&lock)
         _relocate_empty_clusters_sparse(
             X_data, X_indices, X_indptr, sample_weight,
-            centers_old, centers_new, weight_in_clusters, labels)
+            centers_old, centers_new, weight_in_clusters, labels[:, 0].copy())
 
         _average_centers(centers_new, weight_in_clusters)
         _center_shift(centers_old, centers_new, center_shift)
 
         # update lower and upper bounds
-        k = 0
-        for j in range(1, n_clusters):
-            if ((j != labels[i, 0]) and (center_shift[j] > center_shift[k])):
+        k = 0 # index of the greatest center shift
+        l = 1 # index of the second greatest center shift
+        if (center_shift[k] < center_shift[l]):
+            k, l = l, k
+        for j in range(2, n_clusters):
+            if (center_shift[j] > center_shift[k]):
+                l = k
                 k = j
+            elif (center_shift[j] > center_shift[l]):
+                l = j
+            else:
+                pass
         for i in range(n_samples):
             upper_bounds[i] += center_shift[labels[i, 0]]
-            lower_bounds[i] -= center_shift[k]
+            if j == labels[i, 0]:
+                lower_bounds[i] -= center_shift[l]
+            else:
+                lower_bounds[i] -= center_shift[k]
 
 
 cdef void _update_chunk_sparse(
@@ -664,8 +687,10 @@ cdef void _update_chunk_sparse(
             # between the sample and its current assigned center.
             lower_bound = upper_bound
             # Tighten upper bound
-            upper_bound = _euclidean_dense_dense(
-                &X[i, 0], &centers_old[label1, 0], n_features, False)
+            upper_bound = _euclidean_sparse_dense(
+                X_data[X_indptr[i] - s: X_indptr[i + 1] - s],
+                X_indices[X_indptr[i] - s: X_indptr[i + 1] - s],
+                centers_old[label1], centers_squared_norms[label1], False)
             # Recalculate new threshold
             threshold = max(lower_bound, distance_next_center[label1])
             # Test again with a tight upper bound
